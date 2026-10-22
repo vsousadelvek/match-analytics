@@ -32,13 +32,13 @@ def main():
     n_te = max(1, int(0.15 * len(ds)))
     tr, te = random_split(ds, [len(ds) - n_te, n_te],
                           generator=torch.Generator().manual_seed(0))
-    dl = DataLoader(tr, batch_size=64, shuffle=True)
-    dl_te = DataLoader(te, batch_size=128)
+    dl = DataLoader(tr, batch_size=256, shuffle=True)
+    dl_te = DataLoader(te, batch_size=256)
     print(f"train={len(tr)} test={len(te)} device={device}")
 
     model = PlayerSNN().to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
-    w = torch.tensor([5.0, 1.0], device=device)   # ruido eh minoria ~1:5
+    w = torch.tensor([1.2, 1.0], device=device)
     crit = nn.CrossEntropyLoss(weight=w)
     best = 0.0
     for ep in range(1, args.epochs + 1):

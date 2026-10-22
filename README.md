@@ -23,8 +23,8 @@ video -> DVS events -> clustering (posicoes exatas)
 
 ## Resultados (avaliação honesta)
 
-- **SNN classificadora: 94.9% acc** (jogador vs ruído) em ~8k blobs
-  auto-rotulados por posição — sem nenhuma anotação manual
+- **SNN classificadora: 97.1% acc** (jogador vs ruído) em **43.377 blobs**
+  auto-rotulados por posição+forma — sem nenhuma anotação manual
 - Arquitetura de produção real (mesma de sistemas Prophesee): clustering
   de eventos dá posições exatas, a SNN decide o que é jogador
 - Detector end-to-end SNN também implementado (`src/snn_detector.py`,

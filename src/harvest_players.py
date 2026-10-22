@@ -15,15 +15,17 @@ from .auto_label import detect_blobs
 from .player_snn import crop_events
 
 EV_W, EV_H = 320, 240
-MAX = 120
+MAX = 400
 
 
 def label_of(box):
+    """Jogador = dentro do campo E proporcao de pessoa (h>w, tamanho ok).
+    Fora, gigante/achatado/grudado = ruido."""
     x, y, w, h = box
     cy = y + h
-    # campo: pe do blob abaixo da linha das arquibancadas, dentro das margens
     inside = cy > EV_H * 0.25 and EV_W * 0.03 < x + w / 2 < EV_W * 0.97
-    return 1 if inside else 0
+    person_shape = (8 <= h <= 55 and 4 <= w <= 30 and h >= w * 0.9)
+    return 1 if (inside and person_shape) else 0
 
 
 def main():
