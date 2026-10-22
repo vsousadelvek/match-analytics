@@ -89,7 +89,7 @@ def main():
             x = torch.from_numpy(window_features(trail)).unsqueeze(0).to(device)
             with torch.no_grad():
                 phm, psz = model(x)
-            boxes = decode(phm.cpu(), psz.cpu())
+            boxes = decode(phm.cpu(), psz.cpu(), k=16, thr=0.35)
         else:
             boxes = detect_blobs(acc)
         # so o campo (mascara poligonal por baixo das arquibancadas)

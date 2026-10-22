@@ -20,11 +20,16 @@ video -> DVS events -> detector SNN (conv-LIF, auto-labels)
 | Radar | **Homografia calibrada** → posição real em metros no mini-mapa |
 | Stats | distância percorrida por time, jogadores em campo, trilhas |
 
-## Resultados
+## Resultados (avaliação honesta)
 
-- 15–17 jogadores simultâneos detectados direto do stream de eventos
-- Radar 2D com cores por time em tempo real
-- Distância acumulada por time ao longo do clipe (~1–2.5 km por time em 60s de tracking)
+- **Precision 0.80 / Recall 0.53** contra pseudo-ground truth de eventos,
+  medido em vídeo fora do conjunto de treino — sem nenhuma anotação manual
+- ~15-20 jogadores simultâneos por frame
+- Recall satura ~0.53: jogador parado não emite evento — limitação real
+  do paradigma DVS, não do modelo (comportamento idêntico a event cameras reais)
+- Radar 2D com **zonas de controle territorial (Voronoi)** por time
+- Dataset: 1.761 janelas de eventos auto-rotuladas de 12 segmentos de partidas
+- Distância real percorrida por time (metros, via homografia)
 
 ## Uso
 

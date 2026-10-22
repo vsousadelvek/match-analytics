@@ -84,7 +84,8 @@ def main():
             if not (2 <= len(boxes) <= 22):   # cena plausivel de jogo
                 continue
             hm, size = boxes_to_heatmap(boxes)
-            np.savez_compressed(out_dir / f"{Path(vid).stem}_{fi:05d}",
+            tag = spec.replace(":", "-").replace("/", "_").replace("\\", "_")
+            np.savez_compressed(out_dir / f"{Path(tag).stem}_{fi:05d}",
                                 x=window_features(trail), hm=hm, size=size)
             cnt += 1
         cap.release()
