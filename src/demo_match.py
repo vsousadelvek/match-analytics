@@ -14,6 +14,7 @@ import torch
 from .events import DVSSimulator
 from .auto_label import detect_blobs, window_features
 from .snn_detector import EventDetectorSNN, decode
+from .player_snn import PlayerSNN, crop_events
 from .tracker import Tracker
 from .teams import TeamClassifier, jersey_color
 from .homography import Homography, draw_pitch, PITCH_W, PITCH_H
@@ -54,10 +55,11 @@ def main():
     args = ap.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = EventDetectorSNN().to(device)
-    ck = Path("checkpoints/snn_detector.pt")
+    ck = Path("checkpoints/player_snn.pt")
     use_snn = args.use_events and ck.exists()
+    model = None
     if use_snn:
+        model = PlayerSNN().to(device)
         model.load_state_dict(torch.load(ck, map_location="cpu",
                                        weights_only=False))
         model.eval()
@@ -67,7 +69,7 @@ def main():
     out = cv2.VideoWriter(args.out, cv2.VideoWriter_fourcc(*"mp4v"),
                           fps, (OUT_W, OUT_H))
     dvs = DVSSimulator(size=(EV_W, EV_H))
-    tracker = Tracker(max_dist=30, max_misses=20, min_hits=6)
+    tracker = Tracker(max_dist=30, max_misses=12, min_hits=6)
     trail = deque(maxlen=3)
     homo = Homography(args.calib)
     teams = TeamClassifier()
@@ -83,15 +85,17 @@ def main():
         if not ok:
             break
         trail.append(dvs.process(frame))
-        acc = np.clip(sum(trail), -1, 1)
+        # janela ponderada: o frame recente domina (posicao atual, nao atrasada)
+        w = [0.55, 0.30, 0.15][-len(trail):] if len(trail) < 3 else [0.55, 0.30, 0.15]
+        acc = np.clip(sum(e * ww for e, ww in zip(list(trail)[::-1], w)), -1, 1)
 
-        if use_snn:
-            x = torch.from_numpy(window_features(trail)).unsqueeze(0).to(device)
+        # clustering de eventos = posicoes exatas; SNN filtra jogador vs ruido
+        boxes = detect_blobs(acc)
+        if use_snn and boxes:
+            xs = torch.stack([crop_events(acc, b) for b in boxes]).to(device)
             with torch.no_grad():
-                phm, psz = model(x)
-            boxes = decode(phm.cpu(), psz.cpu(), k=16, thr=0.35)
-        else:
-            boxes = detect_blobs(acc)
+                keep = model(xs).argmax(1).cpu().numpy()
+            boxes = [b for b, k in zip(boxes, keep) if k == 1]
         # so o campo (mascara poligonal por baixo das arquibancadas)
         boxes = [b for b in boxes
                  if b[1] + b[3] > EV_H * 0.25 and b[3] >= b[2] * 0.8
@@ -129,7 +133,8 @@ def main():
                 team = team_assign.get(t.id, -1)
             color = TEAM_COLORS[team] if team >= 0 else REF_COLOR
 
-            # "olho" estilo SNN: elipse + pupila + trilha curta
+            if t.misses > 4:
+                continue
             ex, ey = int((x + w / 2) * kx), int((y + h / 2) * ky)
             pts = [(int(c[0] * kx), int(c[1] * ky)) for c in t.trail[-12:]]
             for a, b in zip(pts, pts[1:]):

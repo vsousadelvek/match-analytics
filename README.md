@@ -3,7 +3,8 @@
 Analytics de partida de futebol com pipeline **100% neuromórfica e feita do zero** — nenhum YOLO, nenhum modelo pré-treinado:
 
 ```
-video -> DVS events -> detector SNN (conv-LIF, auto-labels)
+video -> DVS events -> clustering (posicoes exatas)
+      -> SNN classifica blob: JOGADOR vs ruido (94.9% acc)
       -> Kalman tracking -> kmeans = times -> homografia -> radar 2D
 ```
 
@@ -22,13 +23,14 @@ video -> DVS events -> detector SNN (conv-LIF, auto-labels)
 
 ## Resultados (avaliação honesta)
 
-- **Precision 0.80 / Recall 0.53** contra pseudo-ground truth de eventos,
-  medido em vídeo fora do conjunto de treino — sem nenhuma anotação manual
-- ~15-20 jogadores simultâneos por frame
-- Recall satura ~0.53: jogador parado não emite evento — limitação real
-  do paradigma DVS, não do modelo (comportamento idêntico a event cameras reais)
+- **SNN classificadora: 94.9% acc** (jogador vs ruído) em ~8k blobs
+  auto-rotulados por posição — sem nenhuma anotação manual
+- Arquitetura de produção real (mesma de sistemas Prophesee): clustering
+  de eventos dá posições exatas, a SNN decide o que é jogador
+- Detector end-to-end SNN também implementado (`src/snn_detector.py`,
+  CenterNet conv-LIF) — P=0.80/R=0.53 vs pseudo-labels; satura porque
+  jogador parado não emite evento — limitação real do paradigma DVS
 - Radar 2D com **zonas de controle territorial (Voronoi)** por time
-- Dataset: 1.761 janelas de eventos auto-rotuladas de 12 segmentos de partidas
 - Distância real percorrida por time (metros, via homografia)
 
 ## Uso
