@@ -1,0 +1,65 @@
+=====================================================
+POST — LINKEDIN (anexar match_h264.mp4 OU carrossel)
+=====================================================
+
+Versão vídeo (45-90s ideal — corte o clip se quiser):
+
+Construí um analytics de partida de futebol sem usar nenhum modelo pré-treinado. Nenhum YOLO, nenhum DETR — pipeline neuromórfica inteira do zero.
+
+O que o vídeo mostra:
+
+→ Esquerda: a partida com jogadores detectados por time
+→ Centro: radar 2D ao vivo — posição real em metros de cada jogador
+→ Direita: stats por time (distância percorrida, jogadores em campo)
+
+A arquitetura, tudo implementado na unha:
+
+• Câmera DVS simulada: frames viram stream de eventos ON/OFF
+• Detector Spiking Neural Network (conv-LIF, surrogate gradient) que aprende a achar jogadores direto nos spikes
+• O detalhe que mais gosto: os labels não existem — o próprio pipeline de clustering de eventos gera pseudo-ground truth e a SNN aprende com eles. Auto-labeling total
+• Tracking com filtro de Kalman implementado do zero
+• Times separados por kmeans na cor do uniforme
+• Homografia calibrada projeta tudo num mini-mapa tático
+
+Sports analytics com hardware neuromórfico é um caso real (Prophesee já trabalha com isso) — câmeras de eventos enxergam movimento a microssegundos com latência quase zero, ideal pra bola e sprint.
+
+Sexto projeto da série de computação neuromórfica que venho publicando. Código completo no comentário 👇
+
+Estou aberto a oportunidades em visão computacional — freelas ou posições, adoraria conversar.
+
+=====================================================
+VERSÃO CARROSSEL (alternativa, engaja mais)
+=====================================================
+
+Slide 1 (imagem demo/carrossel_1.png):
+"Construí analytics de futebol com zero modelos pré-treinados — pipeline neuromórfica do zero 🧠⚽"
+
+Slide 2 (diagrama/texto):
+video frames -> eventos DVS -> SNN detector -> Kalman -> radar 2D
+• detecção por SPIKES (conv-LIF, surrogate gradient)
+• labels auto-gerados — zero anotação
+• times por kmeans na cor do uniforme
+
+Slide 3 (demo/carrossel_2.png):
+"Radar 2D ao vivo: cada ponto é um jogador rastreado por Kalman,
+posição real em metros via homografia calibrada"
+
+Slide 4 (demo/carrossel_3.png):
+"15-17 jogadores simultâneos | distância real percorrida por time
+Código completo: github.com/vsousadelvek/match-analytics"
+
+Slide 5 (CTA):
+"6º projeto da série SNN — código nos comentários.
+Aberto a freelas e posições em Computer Vision."
+
+=====================================================
+NOTAS PRA VOCÊ (não colar)
+=====================================================
+
+- Anexe demo/match_h264.mp4 OU monte o carrossel com carrossel_*.png
+- Carrossel engaja mais (+278% vs vídeo segundo Buffer) — sugiro os dois,
+  ou carrossel com vídeo no último slide
+- ZERO hashtags nos dados de 2025 (penaliza alcance)
+- Link do GitHub NOS COMENTÁRIOS, não no post
+- Responde todos os comentários na primeira hora (+30% engajamento)
+- Melhor dia: terça ou quarta de manhã

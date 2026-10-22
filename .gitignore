@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+raw/
+data/
+demo/match.mp4
+demo/chk*.png
