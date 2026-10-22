@@ -41,23 +41,23 @@ class EventDetectorSNN(nn.Module):
     def __init__(self, num_steps=8):
         super().__init__()
         self.num_steps = num_steps
-        self.c1 = nn.Conv2d(2, 16, 3, stride=2, padding=1)    # 120x160
+        self.c1 = nn.Conv2d(2, 32, 3, stride=2, padding=1)    # 120x160
         self.l1 = LIF()
-        self.c2 = nn.Conv2d(16, 32, 3, stride=2, padding=1)  # 60x80
+        self.c2 = nn.Conv2d(32, 64, 3, stride=2, padding=1)   # 60x80
         self.l2 = LIF(v_th=0.8)
-        self.c3 = nn.Conv2d(32, 48, 3, stride=2, padding=1)  # 30x40
+        self.c3 = nn.Conv2d(64, 96, 3, stride=2, padding=1)   # 30x40
         self.l3 = LIF(v_th=0.6)
-        self.c4 = nn.Conv2d(48, 64, 3, stride=2, padding=1)  # 15x20
+        self.c4 = nn.Conv2d(96, 128, 3, stride=2, padding=1)  # 15x20
         self.l4 = LIF(v_th=0.5)
-        self.hm_head = nn.Conv2d(64, 1, 1)
-        self.sz_head = nn.Conv2d(64, 2, 1)
+        self.hm_head = nn.Conv2d(128, 1, 1)
+        self.sz_head = nn.Conv2d(128, 2, 1)
 
     def forward(self, x):
         B = x.size(0)
-        m1 = torch.zeros(B, 16, 120, 160, device=x.device)
-        m2 = torch.zeros(B, 32, 60, 80, device=x.device)
-        m3 = torch.zeros(B, 48, 30, 40, device=x.device)
-        m4 = torch.zeros(B, 64, 15, 20, device=x.device)
+        m1 = torch.zeros(B, 32, 120, 160, device=x.device)
+        m2 = torch.zeros(B, 64, 60, 80, device=x.device)
+        m3 = torch.zeros(B, 96, 30, 40, device=x.device)
+        m4 = torch.zeros(B, 128, 15, 20, device=x.device)
         acc = 0.0
         for _ in range(self.num_steps):
             s, m1 = self.l1(self.c1(x), m1)

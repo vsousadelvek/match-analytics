@@ -1,15 +1,15 @@
-"""Demo de partida: eventos -> SNN detecta jogadores -> Kalman tracking
--> times por cor -> radar 2D + stats.
+"""Demo de partida estilo videogame:
+video full-frame -> olhos SNN nos jogadores -> radar inset com Voronoi.
 
 Uso: python -m src.demo_match raw/clip.mp4 --calib calib_m02.json -o demo/match.mp4
 """
 import argparse
 from collections import deque
+from pathlib import Path
 
 import cv2
 import numpy as np
 import torch
-from pathlib import Path
 
 from .events import DVSSimulator
 from .auto_label import detect_blobs, window_features
@@ -19,8 +19,30 @@ from .teams import TeamClassifier, jersey_color
 from .homography import Homography, draw_pitch, PITCH_W, PITCH_H
 
 EV_W, EV_H = 320, 240
-TEAM_COLORS = [(0, 140, 255), (255, 60, 200)]   # laranja / rosa
-REF_COLOR = (255, 255, 0)
+OUT_W, OUT_H = 1280, 720
+TEAM_COLORS = [(0, 165, 255), (255, 80, 200)]   # laranja / rosa
+REF_COLOR = (200, 200, 200)
+RADAR_W, RADAR_H = 420, 252
+
+
+def voronoi_overlay(pitch_img, players):
+    """Colore regiao de controle por time (voronoi por jogador)."""
+    if not players:
+        return
+    h, w = pitch_img.shape[:2]
+    yy, xx = np.mgrid[0:h, 0:w]
+    best_d = np.full((h, w), 1e18)
+    best_t = np.zeros((h, w), np.int8)
+    for (px, py, team) in players:
+        d = (xx - px) ** 2 + (yy - py) ** 2
+        upd = d < best_d
+        best_d[upd] = d[upd]
+        best_t[upd] = team
+    ov = pitch_img.copy()
+    for tm, col in enumerate(TEAM_COLORS):
+        m = best_t == tm
+        ov[m] = (ov[m] * 0.45 + np.array(col) * 0.55).astype(np.uint8)
+    return ov
 
 
 def main():
@@ -28,8 +50,7 @@ def main():
     ap.add_argument("video")
     ap.add_argument("--calib", default=None)
     ap.add_argument("-o", "--out", default="demo/match.mp4")
-    ap.add_argument("--use-events", action="store_true",
-                    help="usa detector SNN nos eventos em vez do auto-label")
+    ap.add_argument("--use-events", action="store_true")
     args = ap.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -44,18 +65,16 @@ def main():
     cap = cv2.VideoCapture(args.video)
     fps = cap.get(cv2.CAP_PROP_FPS) or 25
     out = cv2.VideoWriter(args.out, cv2.VideoWriter_fourcc(*"mp4v"),
-                          fps, (1200, 400))
+                          fps, (OUT_W, OUT_H))
     dvs = DVSSimulator(size=(EV_W, EV_H))
-    tracker = Tracker(max_dist=35, max_misses=15, min_hits=5)
+    tracker = Tracker(max_dist=30, max_misses=20, min_hits=6)
     trail = deque(maxlen=3)
     homo = Homography(args.calib)
     teams = TeamClassifier()
 
-    dist = {}          # track id -> distancia em metros do campo
+    dist = {}
     last_pos = {}
-    team_assign = {}   # track id -> time
-
-    # calibra times nos primeiros frames
+    team_assign = {}
     fit_frames = 250
     fit_colors = []
 
@@ -73,26 +92,31 @@ def main():
             boxes = decode(phm.cpu(), psz.cpu())
         else:
             boxes = detect_blobs(acc)
-        # so o campo: ignora arquibancada/placas (topo e bordas)
-        # e mantem blobs com proporcao de pessoa (h > w)
+        # so o campo (mascara poligonal por baixo das arquibancadas)
         boxes = [b for b in boxes
-                 if b[1] + b[3] > EV_H * 0.22 and b[3] >= b[2] * 0.8
-                 and b[2] <= 40 and b[3] <= 60]
-        tracks = tracker.step(boxes)
+                 if b[1] + b[3] > EV_H * 0.25 and b[3] >= b[2] * 0.8
+                 and b[2] <= 40 and b[3] <= 60
+                 and EV_W * 0.02 < b[0] + b[2] / 2 < EV_W * 0.98]
+        merged = []
+        for b in sorted(boxes, key=lambda b: -(b[2] * b[3])):
+            cx, cy = b[0] + b[2] / 2, b[1] + b[3] / 2
+            if not any((cx - (m[0] + m[2] / 2)) ** 2 + (cy - (m[1] + m[3] / 2)) ** 2 < 12 ** 2
+                       for m in merged):
+                merged.append(b)
+        tracks = tracker.step(merged)
 
-        sx, sy = 400 / EV_W, 400 / EV_H
-        view = cv2.resize(frame, (400, 400))
-        pitch = draw_pitch()
-        panel = np.zeros((400, 400, 3), np.uint8)
+        fw, fh = frame.shape[1], frame.shape[0]      # px do frame original
+        fx, fy = fw / EV_W, fh / EV_H                # ev-space -> frame px
+        view = cv2.resize(frame, (OUT_W, OUT_H))
+        kx, ky = OUT_W / EV_W, OUT_H / EV_H    # ev-space -> canvas
+        players_radar = []
 
         for t in tracks:
             x, y, w, h = t.box
-            foot_x, foot_y = (x + w / 2) * sx, (y + h) * sy
-            # cor do uniforme
-            col = jersey_color(view, (x * sx, y * sy, w * sx, h * sy))
+            foot_x, foot_y = (x + w / 2) * kx, (y + h) * ky
+            col = jersey_color(view, (x * kx, y * ky, w * kx, h * ky))
             if fit_frames > 0 and col is not None:
                 fit_colors.append(col)
-            tid = t.id
             if col is not None:
                 vote = teams.predict(col)
                 if vote >= 0:
@@ -100,62 +124,61 @@ def main():
                     t.team_votes = t.team_votes[-15:]
             if getattr(t, "team_votes", None):
                 team = max(set(t.team_votes), key=t.team_votes.count)
-                team_assign[tid] = team
+                team_assign[t.id] = team
             else:
-                team = team_assign.get(tid, -1)
+                team = team_assign.get(t.id, -1)
             color = TEAM_COLORS[team] if team >= 0 else REF_COLOR
-            cv2.rectangle(view, (int(x * sx), int(y * sy)),
-                          (int((x + w) * sx), int((y + h) * sy)), color, 2)
 
-            # radar: pe do jogador projetado
-            m = homo.map(foot_x, foot_y)
+            # "olho" estilo SNN: elipse + pupila + trilha curta
+            ex, ey = int((x + w / 2) * kx), int((y + h / 2) * ky)
+            pts = [(int(c[0] * kx), int(c[1] * ky)) for c in t.trail[-12:]]
+            for a, b in zip(pts, pts[1:]):
+                if abs(a[0] - b[0]) + abs(a[1] - b[1]) < 80:   # sem saltos
+                    cv2.line(view, a, b, color, 2)
+            cv2.ellipse(view, (ex, ey), (16, 9), 0, 0, 360, color, 3)
+            cv2.circle(view, (ex, ey), 5, color, -1)
+            cv2.ellipse(view, (ex, ey), (16, 9), 0, 0, 360, (255, 255, 255), 1)
+
+            m = homo.map((x + w / 2) * fx, (y + h) * fy)
             if m:
-                y0_off = (400 - PITCH_H * 4) // 2
-                px = int(m[0] * 4)
-                py = int(m[1] * 4) + y0_off
-                cv2.circle(pitch, (px, py), 4, color, -1)
-                cv2.circle(pitch, (px, py), 5, (255, 255, 255), 1)
-                if tid in last_pos:
-                    d = np.linalg.norm(np.array(m) - last_pos[tid])
-                    if d < 3:                       # evita saltos
-                        dist[tid] = dist.get(tid, 0) + d
-                last_pos[tid] = np.array(m)
+                rx = int(m[0] / PITCH_W * RADAR_W)
+                ry = int(m[1] / PITCH_H * RADAR_H)
+                players_radar.append((rx, ry, team))
+                if t.id in last_pos:
+                    d = np.linalg.norm(np.array(m) - last_pos[t.id])
+                    if d < 3:
+                        dist[t.id] = dist.get(t.id, 0) + d * (105 / PITCH_W)
+                last_pos[t.id] = np.array(m)
 
         fit_frames -= 1
         if fit_frames == 0 and fit_colors:
             teams.fit(fit_colors)
             print("times calibrados:", len(fit_colors), "amostras")
 
-        # painel: stats por time
-        stats = {0: [0, 0.0], 1: [0, 0.0], -1: [0, 0.0]}
-        for tid, d in dist.items():
-            team = team_assign.get(tid, -1)
-            stats.setdefault(team, [0, 0.0])
-            stats[team][0] += 1
-            stats[team][1] += d
-        cv2.putText(panel, "MATCH ANALYTICS", (60, 60), cv2.FONT_HERSHEY_SIMPLEX,
-                    1.0, (120, 120, 120), 2)
-        active_team = {}
-        for t in tracks:
-            tm = team_assign.get(t.id, -1)
-            active_team[tm] = active_team.get(tm, 0) + 1
-        cv2.putText(panel, f"em campo: {len(tracks)}", (20, 140),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (200, 200, 200), 2)
-        yy = 200
-        for tm, name in [(0, "Time A"), (1, "Time B")]:
-            n = active_team.get(tm, 0)
-            d = stats.get(tm, [0, 0])[1]
-            cv2.putText(panel, f"{name}: {n} em campo | {d:.0f}m", (20, yy),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, TEAM_COLORS[tm], 2)
-            yy += 50
-        cv2.putText(panel, "pipeline: DVS -> SNN detector -> Kalman",
-                    (20, 330), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (140, 140, 140), 1)
-        cv2.putText(panel, "-> kmeans times -> homografia 2D", (20, 360),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (140, 140, 140), 1)
+        # radar inset bottom-right com voronoi
+        radar = cv2.resize(draw_pitch()[80:320], (RADAR_W, RADAR_H))
+        radar = voronoi_overlay(radar, players_radar) if players_radar else radar
+        for (rx, ry, team) in players_radar:
+            c = TEAM_COLORS[team] if team >= 0 else REF_COLOR
+            cv2.circle(radar, (rx, ry), 5, c, -1)
+            cv2.circle(radar, (rx, ry), 6, (255, 255, 255), 1)
+        view[OUT_H - RADAR_H - 14:OUT_H - 14, OUT_W - RADAR_W - 14:OUT_W - 14] = radar
+        cv2.rectangle(view, (OUT_W - RADAR_W - 14, OUT_H - RADAR_H - 14),
+                      (OUT_W - 14, OUT_H - 14), (255, 255, 255), 1)
 
-        cv2.putText(view, "camera", (10, 390), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.7, (255, 255, 255), 2)
-        out.write(np.hstack([view, pitch, panel]))
+        # header stats
+        a_dist = sum(d for tid, d in dist.items() if team_assign.get(tid) == 0)
+        b_dist = sum(d for tid, d in dist.items() if team_assign.get(tid) == 1)
+        hud = np.zeros((64, OUT_W, 3), np.uint8)
+        cv2.putText(hud, "MATCH ANALYTICS  |  SNN events + Kalman", (20, 40),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, (220, 220, 220), 2)
+        cv2.putText(hud, f"Time A {a_dist:.0f}m", (OUT_W - 420, 40),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, TEAM_COLORS[0], 2)
+        cv2.putText(hud, f"Time B {b_dist:.0f}m", (OUT_W - 200, 40),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, TEAM_COLORS[1], 2)
+        view[:64] = cv2.addWeighted(view[:64], 0.35, hud, 0.65, 0)
+
+        out.write(view)
 
     cap.release()
     out.release()

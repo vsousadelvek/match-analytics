@@ -55,7 +55,7 @@ class Track:
 
     def update(self, box):
         self.kf.update([box[0] + box[2] / 2, box[1] + box[3] / 2])
-        self.box = np.array(box, float)
+        self.box = 0.5 * self.box + 0.5 * np.array(box, float)   # EMA anti-jitter
         self.trail.append(self.centroid.copy())
         if len(self.trail) > 40:
             self.trail.pop(0)

@@ -61,29 +61,35 @@ def main():
     out_dir = Path("data")
     out_dir.mkdir(exist_ok=True)
     n_saved = 0
-    for vid in sys.argv[1:]:
+    for spec in sys.argv[1:]:
+        # vid ou vid:start_frac:end_frac (fracao do video, ex: 0.2:0.3)
+        parts = spec.rsplit(":", 2)
+        vid = parts[0]
+        fr0, fr1 = (float(parts[1]), float(parts[2])) if len(parts) == 3 else (0.0, 1.0)
         cap = cv2.VideoCapture(vid)
+        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        cap.set(cv2.CAP_PROP_POS_FRAMES, int(total * fr0))
         dvs = DVSSimulator(size=(EV_W, EV_H))
         trail = deque(maxlen=3)
-        cnt = 0
-        while cnt < MAX_PER_VIDEO:
+        cnt = fi = 0
+        end = int(total * fr1)
+        while cnt < MAX_PER_VIDEO and fi + total * fr0 < end:
             ok, f = cap.read()
             if not ok:
                 break
+            fi += 1
             trail.append(dvs.process(f))
-            if len(trail) < 3 or cnt % 2 == 1 and False:
-                pass
             acc = np.clip(sum(trail), -1, 1)
             boxes = detect_blobs(acc)
             if not (2 <= len(boxes) <= 22):   # cena plausivel de jogo
                 continue
             hm, size = boxes_to_heatmap(boxes)
-            np.savez_compressed(out_dir / f"{Path(vid).stem}_{cnt:04d}",
+            np.savez_compressed(out_dir / f"{Path(vid).stem}_{fi:05d}",
                                 x=window_features(trail), hm=hm, size=size)
             cnt += 1
         cap.release()
         n_saved += cnt
-        print(f"{vid}: {cnt} amostras")
+        print(f"{spec}: {cnt} amostras")
     print(f"total: {n_saved}")
 
 
